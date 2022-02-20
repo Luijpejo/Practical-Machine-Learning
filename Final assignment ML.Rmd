@@ -1,0 +1,107 @@
+---
+title: "Prediction Assignment Writeup"
+author: "Joost Luijpers"
+date: "20/02/2022"
+output:
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+```{r loading libraries, message=FALSE}
+library(caret)
+library(randomForest)
+```
+
+## Introduction
+This document describes my final assignment for the module "Practical Machine Learning" of the Data Scientist Specialization of the Johns Hopkins University on Coursera.  
+The context of this assignment is the performance of barbell lifts (see "Reference" at the end of this document for more information). Six participants have been asked to perform these lifts correctly and incorrectly in five different ways, while their execution was measured using accelerometers on the belt, forearm, arm, and dumbbell.  
+Based on this data I create a prediction model, that can predict the correctness of the execution on new data.
+
+
+## Data
+The data for this assignment is downloaded from the internet, using the sources as indicated in the assignment description. 
+
+```{r downloading the data, message = FALSE}
+url1 <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+download.file(url1, "pml-training.csv", method = "curl")
+training <- read.csv("./pml-training.csv", na.strings = c("NA", "#DIV/0!", ""))
+
+url2<- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+download.file(url2, "pml-testing.csv", method = "curl")
+testing <- read.csv("./pml-testing.csv", na.strings = c("NA", "#DIV/0!", ""))
+```
+  
+Within the data the variable "classe" indicates the class of execution of the dumbbell exercise. Classe A indicates a proper execution. Classes B through E indicate the four erroneous ways of execution, throwing the elbows to the front (Class B), lifting the dumbbell only halfway (Class C), lowering the dumbbell only halfway (Class D) or throwing the hips to the front (Class E). This variable "classe" is what we are going to predict.  
+When looking at the distribution of the `r dim(training)[1]` samples of the training set over the various classes, we can see that classe A, the proper execution, has somewhat more samples, compared to the various erroneous classes. But these other classes have enough samples left to be able to use them for the analysis.  
+```{r spread of classe}
+table(training$classe)
+```
+
+  
+The data contains many variables that do not add value to the prediction, either because it concerns more administrative data or because they are predominately empty. These variables are being removed from both the training and the testing data. 
+
+```{r removing columns}
+#removing the administrative columns
+training <- training[ ,-c(1:7)]
+testing <- testing[ ,-c(1:7)]
+
+#removing empty columns - columns containing NA-values
+completes <- complete.cases(t(training)) & complete.cases(t(testing))
+training <- training[,completes]
+testing  <- testing[,completes]
+
+#making a factor of classe
+training$classe <- as.factor(training$classe)
+```
+This leaves us with `r dim(training)[2]` variables.  
+
+## Reproducibility
+In order to be able to reproduce my analysis, I have set the seed to 1234.
+```{r set seed}
+set.seed(1234)
+```
+
+  
+## Cross validation
+To ensure that our model will have a high enough accuracy, we are going to test our fitted model on a separate validation sample-set. Our training set is large enough to split it in a training set and a validation set. In accordance with the theory I use a 75%-25% split.  
+```{r split training set}
+splitset <- createDataPartition(training$classe, p = 0.75, list = FALSE)
+trainset <- training[splitset, ]
+validset <- training[-splitset, ]
+dim(trainset)
+dim(validset)
+```
+So I will train the model on the trainset and then validate it on the validset.  
+
+
+## Train the model and validate to check the accuracy
+Random Forests is one of the most, widely used and highly accurate methods for prediction. I will create a model using this method.
+```{r fit the model,cache=TRUE}
+rfmodel <- train(classe ~ ., data = trainset, method = "rf")
+```
+  
+When applying the fitted model on the training set, I can check the in sample accuracy of this model. Applying the fitted model to the validation set gives me the out of sample accuracy.  
+
+```{r}
+predtrain <- predict(rfmodel, trainset)
+predval <- predict(rfmodel, validset)
+confusionMatrix(predtrain, trainset$classe)
+confusionMatrix(predval, validset$classe)
+```
+So, the in sample accuracy is `r confusionMatrix(predtrain, trainset$classe)$overall[1]`. The out of sample accuracy is `r confusionMatrix(predval, validset$classe)$overall[1]`.   
+This out of sample accuracy is sufficient to have the model be used on the test set.
+
+## Predict the test set
+Using the fitted model on Random Forests (rfmodel) on test set gives us the predictions for these `r dim(testing)[1]` cases.  
+```{r}
+predtest <- predict(rfmodel, testing)
+predtest
+```
+
+
+### Reference
+This work is based on the research done as described in  
+"Velloso, E.; Bulling, A.; Gellersen, H.; Ugulino, W.; Fuks, H. Qualitative Activity Recognition of Weight Lifting Exercises. Proceedings of 4th International Conference in Cooperation with SIGCHI (Augmented Human '13) . Stuttgart, Germany: ACM SIGCHI, 2013."  
+Read more: http:/groupware.les.inf.puc-rio.br/har#weight_lifting_exercises#ixzz4TjqruoIR  
